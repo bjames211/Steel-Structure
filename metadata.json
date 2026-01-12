@@ -1,0 +1,5 @@
+{
+  "name": "SteelStructure AI - Metal Building Analyzer",
+  "description": "A high-precision visual analysis tool for metal buildings. Upload a photo to automatically detect colors, count features like doors and windows, and estimate dimensions based on architectural scale.",
+  "requestFramePermissions": []
+}
