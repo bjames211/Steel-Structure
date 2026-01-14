@@ -2,95 +2,124 @@
 import React, { useRef, useState } from 'react';
 
 interface ImageUploaderProps {
-  onImagesReady: (images: string[]) => void;
+  onFilesReady: (files: string[]) => void;
+  main?: string | null;
   loading?: boolean;
+  mode?: 'hero' | 'sidebar';
 }
 
-const ImageUploader: React.FC<ImageUploaderProps> = ({ onImagesReady, loading }) => {
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+const ImageUploader: React.FC<ImageUploaderProps> = ({ 
+  onFilesReady, main, loading, mode = 'hero'
+}) => {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    // Cast to File[] to avoid 'unknown' type issues with Array.from in some TS configurations
-    const files = Array.from(event.target.files || []) as File[];
-    if (files.length === 0) return;
-
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImages(prev => [...prev, reader.result as string]);
-      };
-      // 'file' is now correctly typed as 'File' (which inherits from 'Blob')
-      reader.readAsDataURL(file);
+  const processFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const fileArray = Array.from(files);
+    const validFiles = fileArray.filter(f => f.type.startsWith('image/'));
+    
+    const base64Promises = validFiles.map(file => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
     });
-  };
 
-  const removeImage = (index: number) => {
-    setSelectedImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleStartAnalysis = () => {
-    if (selectedImages.length > 0) {
-      onImagesReady(selectedImages);
+    const results = await Promise.all(base64Promises);
+    if (results.length > 0) {
+      onFilesReady(results);
     }
   };
 
-  return (
-    <div className="space-y-6">
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    processFiles(e.dataTransfer.files);
+  };
+
+  if (mode === 'sidebar') {
+    return (
       <div 
-        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer group
-          ${loading ? 'opacity-50 cursor-not-allowed border-slate-300' : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50'}`}
-        onClick={() => !loading && fileInputRef.current?.click()}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !loading && fileRef.current?.click()}
+        className={`w-full p-4 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all gap-2
+          ${isDragging ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-400'}`}
+      >
+        <input type="file" ref={fileRef} className="hidden" accept="image/*" multiple onChange={(e) => processFiles(e.target.files)} />
+        <input type="file" ref={folderRef} className="hidden" webkitdirectory="" directory="" onChange={(e) => processFiles(e.target.files)} />
+        <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+        </div>
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Add More Assets<br/><span className="text-[7px] text-slate-300">Drop files or folders</span></p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div 
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !loading && fileRef.current?.click()}
+        className={`w-full min-h-[400px] rounded-[3rem] border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden relative group
+          ${isDragging ? 'border-blue-600 bg-blue-50 scale-[0.99]' : 'border-slate-200 bg-slate-50/50 hover:bg-white hover:border-blue-400'}`}
       >
         <input 
           type="file" 
-          ref={fileInputRef} 
+          ref={fileRef} 
           className="hidden" 
           accept="image/*" 
-          multiple
-          onChange={handleFileChange}
+          multiple 
+          onChange={(e) => processFiles(e.target.files)} 
         />
-        <div className="flex flex-col items-center gap-3">
-          <div className="bg-slate-100 p-3 rounded-full group-hover:bg-blue-100 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-slate-500 group-hover:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+        <input 
+          type="file" 
+          ref={folderRef} 
+          className="hidden" 
+          webkitdirectory="" 
+          directory="" 
+          onChange={(e) => processFiles(e.target.files)} 
+        />
+
+        <div className="text-center p-12 pointer-events-none">
+          <div className="w-24 h-24 bg-white rounded-[2rem] shadow-xl flex items-center justify-center mx-auto mb-6 border border-slate-100 group-hover:scale-110 group-hover:rotate-3 transition-transform">
+            <span className="text-5xl">🏢</span>
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-slate-700">Add Building Angles</h3>
-            <p className="text-sm text-slate-500 mt-1">Upload 1-5 photos from different viewpoints for better accuracy</p>
+          <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">Automated Batch Ingestion</h3>
+          <p className="text-sm font-black text-slate-400 uppercase tracking-widest max-w-sm mx-auto leading-relaxed">
+            Drag a folder or multiple images to trigger the high-precision AI sync engine.
+          </p>
+          <div className="mt-10 flex gap-4 justify-center pointer-events-auto">
+             <button 
+               onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
+               className="px-8 py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-2xl shadow-slate-900/20 hover:bg-black transition-all"
+             >
+               Select Files
+             </button>
+             <button 
+               onClick={(e) => { e.stopPropagation(); folderRef.current?.click(); }}
+               className="px-8 py-4 bg-white border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:border-blue-400 transition-all"
+             >
+               Select Folder
+             </button>
           </div>
         </div>
       </div>
-
-      {selectedImages.length > 0 && (
-        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Staged Angles ({selectedImages.length})</h4>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-6">
-            {selectedImages.map((img, idx) => (
-              <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 shadow-sm">
-                <img src={img} alt={`Angle ${idx + 1}`} className="w-full h-full object-cover" />
-                <button 
-                  onClick={() => removeImage(idx)}
-                  className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-          </div>
-          <button 
-            disabled={loading}
-            onClick={handleStartAnalysis}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md disabled:bg-slate-400 flex items-center justify-center gap-2"
-          >
-            {loading ? 'Processing...' : 'Analyze Building with Multi-Angle Vision'}
-            {!loading && <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>}
-          </button>
-        </div>
-      )}
     </div>
   );
 };

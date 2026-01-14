@@ -1,58 +1,111 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { BuildingAnalysis } from "../types";
+import { BuildingAnalysis, ColorPaletteItem } from "../types";
 
-export const analyzeBuildingImage = async (base64Images: string[]): Promise<BuildingAnalysis> => {
+export const analyzeBuildingImage = async (
+  mainImage: string, 
+  variantImage?: string, 
+  video?: string,
+  customPalette?: ColorPaletteItem[],
+  brandName: string = "SteelStructure AI",
+  brandPhone: string = "Contact Support",
+  configuratorUrl: string = "https://configurator.yoursite.com"
+): Promise<BuildingAnalysis> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const colorOptions = [
-    "Charcoal", "Slate Blue", "Burnished Slate", "Forest Green", "Polar White",
-    "Light Grey", "Desert Sand", "Crimson Red", "Hawaiian Blue", "Gallery Blue",
-    "Colony Green", "Copper Penny", "Rustic Red", "Tan", "Brown", "Black",
-    "Burgundy", "Clay", "Ash Grey", "Ivy Green"
-  ].join(", ");
+  const paletteString = customPalette 
+    ? customPalette.map(c => c.name).join(", ")
+    : "Charcoal, Slate Blue, Burnished Slate, Forest Green, Polar White, Light Grey, Desert Sand, Crimson Red, Hawaiian Blue, Gallery Blue, Colony Green, Copper Penny, Rustic Red, Tan, Brown, Black, Burgundy, Clay, Ash Grey, Ivy Green";
 
-  const imageParts = base64Images.map(base64 => ({
-    inlineData: {
-      data: base64.split(',')[1],
-      mimeType: 'image/jpeg'
-    }
-  }));
+  const prompt = `Perform an elite architectural audit and SEO generation for a metal building under the brand: "${brandName}".
+  
+  CORE DIMENSIONS & REASONING:
+  - Detect Width, Length, Wall Height, Peak Height, and Roof Pitch.
+  - For EVERY variable, provide a 'thought' explaining your calculation.
+  
+  ARCHITECTURAL FINISHES:
+  - Map colors strictly to this palette: [${paletteString}].
+  
+  UNIQUE TITLE STRATEGY:
+  - Generate two distinct titles with immense "character" and architectural flair.
+  - DO NOT use generic names. Use a "Series Name" approach (e.g., Titan, Sentinel, Apex, Zenith, Ironclad, Heritage).
+  - productTitleShort: (3-5 words) A punchy, memorable name. (e.g., "The Midnight Sentinel {WIDTH}x{LENGTH}")
+  - productTitleLong: (8-12 words) A descriptive, SEO-optimized title. (e.g., "The ${brandName} Zenith Series {WIDTH}x{LENGTH} Triple-Bay Heavy Duty Workshop in {COLOR_WALL}")
 
-  const prompt = `Perform a high-precision industrial analysis of this metal building. 
-  IMPORTANT: Look for structural BAY count (vertical frame lines/columns visible on the side walls). 
-  Large buildings often have 5-10+ bays. Do not underestimate the scale if multiple bays are visible.
+  WORLD-CLASS SALES TEMPLATE:
+  Both 'actualSalesCopy' and 'templateMarkdown' must follow this EXACT structure:
 
-  FEATURES:
-  - Count all garage doors and man doors.
-  - Count STRUCTURAL BAYS (the vertical lines/panels that repeat along the length). 
-  - Estimate the width of one bay (usually 20ft, 25ft, or 30ft).
-  - Count total windows.
+  # {TITLE_LONG}
+  
+  ## Precision Engineering meets Architectural Excellence
+  {A powerful opening paragraph (3-4 sentences) describing the building's aesthetic dominance and structural integrity. Explain how this specific configuration provides the ultimate solution for storage, workspace, or commercial utility.}
+  
+  ## Verified Structural Specifications
+  - **Overall Sizing:** {WIDTH}' Width x {LENGTH}' Length
+  - **Vertical Clearance:** {HEIGHT}' Side Walls
+  - **Roof System:** High-Strength {PITCH} Pitch Design
+  
+  ## Elite Finish & Palette
+  - **Main Wall Finish:** {COLOR_WALL}
+  - **Roof Finish:** {COLOR_ROOF}
+  - **Trim & Accents:** {COLOR_TRIM}
+  - **Protective Wainscot:** {COLOR_WAINSCOT}
+  
+  ## Access & Functional Features
+  - **Industrial Roll-up Doors:** {GARAGE_COUNT}
+  - **Personnel Entry:** {MAN_DOOR_COUNT}
+  - **Natural Lighting (Windows):** {WINDOW_COUNT}
+  
+  ## The ${brandName} Promise
+  {A paragraph detailing why customers choose ${brandName}. Mention 26ga or 29ga steel quality, precision pre-punching, and the brand's commitment to durability in extreme weather.}
+  
+  ## Tailor This Structure to Your Vision
+  Love this design but need to adjust the dimensions or color scheme? You can customize every inch of this building online.
+  - **Modify Online:** ${configuratorUrl}
+  - **Speak with a Specialist:** ${brandPhone}
+  - **Brand Portal:** Visit the official ${brandName} website for more information.
 
-  DIMENSIONS & SCALE:
-  - Use the BAY COUNT to calculate total Length (Length = Bay Count * Bay Width).
-  - Use DOOR HEIGHT to estimate the building's Peak Height.
-  - Estimate the Gable Side Width.
-  - Provide a highly detailed 'estimationLogic' field explaining exactly how you arrived at these numbers (e.g., "Counted 7 bays on the left elevation, estimated at 22ft each, totaling ~154ft length").
+  OUTPUT INSTRUCTIONS:
+  1. 'actualSalesCopy': Fill the template with ACTUAL detected data and the LONG title.
+  2. 'templateMarkdown': Use placeholders like {TITLE_SHORT}, {TITLE_LONG}, {WIDTH}, {LENGTH}, {HEIGHT}, {PITCH}, {COLOR_ROOF}, {COLOR_WALL}, {COLOR_TRIM}, {COLOR_WAINSCOT}, {GARAGE_COUNT}, {MAN_DOOR_COUNT}, {WINDOW_COUNT}, {BRAND}, {PHONE}, and {URL}.
+  
+  CONFIDENCE:
+  - Score 'sizing' and 'colors' from 0 to 1.
+  
+  Return a valid JSON object matching the requested schema exactly.`;
 
-  COLORS:
-  - Identify Roof, Wall, Trim, and Wainscot colors from: [${colorOptions}].
-  - Provide confidence levels for everything.`;
+  const parts: any[] = [
+    { text: prompt },
+    { inlineData: { data: mainImage.split(',')[1], mimeType: 'image/jpeg' } }
+  ];
+
+  if (variantImage) {
+    parts.push({ inlineData: { data: variantImage.split(',')[1], mimeType: 'image/jpeg' } });
+  }
 
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
-      contents: {
-        parts: [
-          ...imageParts,
-          { text: prompt }
-        ]
-      },
+      contents: { parts },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            sku: { type: Type.STRING },
+            productTitleShort: { type: Type.STRING },
+            productTitleLong: { type: Type.STRING },
+            variables: {
+              type: Type.OBJECT,
+              properties: {
+                width: { type: Type.OBJECT, properties: { value: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["value", "thought"] },
+                length: { type: Type.OBJECT, properties: { value: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["value", "thought"] },
+                wallHeight: { type: Type.OBJECT, properties: { value: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["value", "thought"] },
+                peakHeight: { type: Type.OBJECT, properties: { value: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["value", "thought"] },
+                pitch: { type: Type.OBJECT, properties: { value: { type: Type.STRING }, thought: { type: Type.STRING } }, required: ["value", "thought"] }
+              },
+              required: ["width", "length", "wallHeight", "peakHeight", "pitch"]
+            },
             colors: {
               type: Type.OBJECT,
               properties: {
@@ -60,85 +113,72 @@ export const analyzeBuildingImage = async (base64Images: string[]): Promise<Buil
                 wall: { type: Type.STRING },
                 trim: { type: Type.STRING },
                 wainscot: { type: Type.STRING },
-                confidence: { type: Type.NUMBER }
+                thought: { type: Type.STRING }
               },
-              required: ["roof", "wall", "trim", "wainscot", "confidence"]
+              required: ["roof", "wall", "trim", "wainscot", "thought"]
             },
             features: {
               type: Type.OBJECT,
               properties: {
-                garageDoors: {
-                  type: Type.OBJECT,
-                  properties: {
-                    total: { type: Type.NUMBER },
-                    breakdown: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          wall: { type: Type.STRING },
-                          count: { type: Type.NUMBER }
-                        },
-                        required: ["wall", "count"]
-                      }
-                    }
-                  },
-                  required: ["total", "breakdown"]
-                },
-                manDoors: {
-                  type: Type.OBJECT,
-                  properties: {
-                    total: { type: Type.NUMBER },
-                    breakdown: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          wall: { type: Type.STRING },
-                          count: { type: Type.NUMBER }
-                        },
-                        required: ["wall", "count"]
-                      }
-                    }
-                  },
-                  required: ["total", "breakdown"]
-                },
-                windows: { type: Type.NUMBER },
-                bays: {
-                  type: Type.OBJECT,
-                  properties: {
-                    count: { type: Type.NUMBER },
-                    estimatedSpacingFeet: { type: Type.NUMBER }
-                  },
-                  required: ["count", "estimatedSpacingFeet"]
-                },
-                confidence: { type: Type.NUMBER }
+                garageDoors: { type: Type.OBJECT, properties: { total: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["total", "thought"] },
+                manDoors: { type: Type.OBJECT, properties: { total: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["total", "thought"] },
+                windows: { type: Type.OBJECT, properties: { total: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["total", "thought"] },
+                bays: { type: Type.OBJECT, properties: { count: { type: Type.NUMBER }, thought: { type: Type.STRING } }, required: ["count", "thought"] }
               },
-              required: ["garageDoors", "manDoors", "windows", "bays", "confidence"]
+              required: ["garageDoors", "manDoors", "windows", "bays"]
             },
-            dimensions: {
+            confidence: {
               type: Type.OBJECT,
               properties: {
-                widthGableSideFeet: { type: Type.NUMBER },
-                lengthFeet: { type: Type.NUMBER },
-                peakHeightFeet: { type: Type.NUMBER },
-                estimatedSquareFootage: { type: Type.NUMBER },
-                estimationLogic: { type: Type.STRING },
-                confidence: { type: Type.NUMBER }
+                sizing: { type: Type.NUMBER },
+                colors: { type: Type.NUMBER },
+                overall: { type: Type.NUMBER }
               },
-              required: ["widthGableSideFeet", "lengthFeet", "peakHeightFeet", "estimatedSquareFootage", "estimationLogic", "confidence"]
+              required: ["sizing", "colors", "overall"]
+            },
+            descriptions: {
+              type: Type.OBJECT,
+              properties: {
+                actualSalesCopy: { type: Type.STRING },
+                templateMarkdown: { type: Type.STRING }
+              },
+              required: ["actualSalesCopy", "templateMarkdown"]
+            },
+            metadata: {
+              type: Type.OBJECT,
+              properties: {
+                detectedState: { type: Type.STRING }
+              },
+              required: ["detectedState"]
             }
           },
-          required: ["colors", "features", "dimensions"]
+          required: ["sku", "productTitleShort", "productTitleLong", "variables", "colors", "features", "confidence", "descriptions", "metadata"]
         }
       }
     });
 
     const text = response.text;
-    if (!text) throw new Error("Empty response.");
+    if (!text) throw new Error("AI response was empty.");
     return JSON.parse(text) as BuildingAnalysis;
   } catch (error) {
-    console.error("Gemini Error:", error);
-    throw new Error("Analysis failed. Try taking a photo showing the full length of the building to count the structural bays.");
+    console.error("Analysis Error:", error);
+    throw error;
+  }
+};
+
+export const generate3DVariant = async (analysis: BuildingAnalysis): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const prompt = `Architectural 3D render of a metal building: ${analysis.variables.width.value}'x${analysis.variables.length.value}'x${analysis.variables.wallHeight.value}'. Colors: ${analysis.colors.roof} and ${analysis.colors.wall}. Photorealistic, high quality.`;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: prompt }] },
+      config: { imageConfig: { aspectRatio: "16:9" } }
+    });
+    const part = response.candidates[0].content.parts.find(p => p.inlineData);
+    if (!part) throw new Error("No image generated");
+    return `data:image/png;base64,${part.inlineData?.data}`;
+  } catch (e) {
+    throw e;
   }
 };

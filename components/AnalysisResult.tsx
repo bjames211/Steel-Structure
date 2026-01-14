@@ -1,227 +1,272 @@
 
-import React, { useState } from 'react';
-import { BuildingAnalysis, WallBreakdown } from '../types';
+import React, { useState, useMemo } from 'react';
+import { BuildingAnalysis, VariableInsight, FeatureInsight, ColorPaletteItem } from '../types';
+import { generate3DVariant } from '../services/geminiService';
 
 interface AnalysisResultProps {
   analysis: BuildingAnalysis;
-  imageUrls: string[];
+  mainUrl: string;
+  onGenerateImage: (url: string) => void;
+  isGenerating: boolean;
+  generatedUrl: string | null;
+  colorPalette: ColorPaletteItem[];
 }
 
-const COLOR_MAP: Record<string, string> = {
-  "Charcoal": "#36454F",
-  "Slate Blue": "#6A5ACD",
-  "Burnished Slate": "#4E443C",
-  "Forest Green": "#228B22",
-  "Polar White": "#F8F8FF",
-  "Light Grey": "#D3D3D3",
-  "Desert Sand": "#EDC9AF",
-  "Crimson Red": "#DC143C",
-  "Hawaiian Blue": "#0073CF",
-  "Gallery Blue": "#005073",
-  "Colony Green": "#355E3B",
-  "Copper Penny": "#AD6F69",
-  "Rustic Red": "#8B0000",
-  "Tan": "#D2B48C",
-  "Brown": "#A52A2A",
-  "Black": "#000000",
-  "Burgundy": "#800020",
-  "Clay": "#BE6A31",
-  "Ash Grey": "#B2BEB5",
-  "Ivy Green": "#32612D",
-  "N/A": "transparent",
-  "Unknown": "#f1f5f9"
-};
+const AnalysisResult: React.FC<AnalysisResultProps> = ({ 
+  analysis: initialAnalysis, mainUrl, onGenerateImage, isGenerating, generatedUrl, colorPalette
+}) => {
+  const [analysis, setAnalysis] = useState<BuildingAnalysis>(initialAnalysis);
 
-const ConfidenceBadge: React.FC<{ score: number }> = ({ score }) => {
-  const color = score > 85 ? 'bg-emerald-500' : score > 65 ? 'bg-amber-500' : 'bg-red-500';
+  const colorMap = useMemo(() => colorPalette.reduce((acc, curr) => ({
+    ...acc,
+    [curr.name]: curr.hex
+  }), {} as Record<string, string>), [colorPalette]);
+
+  const handle3DGen = async () => {
+    try {
+      const url = await generate3DVariant(analysis);
+      onGenerateImage(url);
+    } catch (e) {
+      alert("Visual generation failed.");
+    }
+  };
+
+  const updateVariable = (key: keyof BuildingAnalysis['variables'], field: 'value' | 'thought', val: string | number) => {
+    setAnalysis(prev => ({
+      ...prev,
+      variables: {
+        ...prev.variables,
+        [key]: { ...prev.variables[key], [field]: val }
+      }
+    }));
+  };
+
+  const updateFeature = (key: keyof BuildingAnalysis['features'], field: 'total' | 'thought', val: string | number) => {
+    setAnalysis(prev => ({
+      ...prev,
+      features: {
+        ...prev.features,
+        [key]: { ...prev.features[key], [field]: val }
+      }
+    }));
+  };
+
+  const vars = analysis.variables;
+  const feats = analysis.features;
+
   return (
-    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-sm">
-      <div className={`w-1.5 h-1.5 rounded-full ${color} animate-pulse`} />
-      <span className="text-[10px] font-bold uppercase tracking-tight text-white/90">{score}% Reliability</span>
-    </div>
-  );
-};
-
-const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, imageUrls }) => {
-  const [activeImage, setActiveImage] = useState(0);
-
-  return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left: Angle Gallery */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col h-full">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Visual Inspection</h3>
-            <ConfidenceBadge score={analysis.colors.confidence} />
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
+      
+      {/* Product Identity Header */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100 flex-shrink-0">
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+             </svg>
           </div>
-          
-          <div className="rounded-xl overflow-hidden aspect-video relative group bg-slate-100 flex-grow">
-            <img 
-              src={imageUrls[activeImage]} 
-              alt="Analyzed building" 
-              className="w-full h-full object-contain" 
-            />
-          </div>
-          
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {imageUrls.map((img, idx) => (
-              <button 
-                key={idx}
-                onClick={() => setActiveImage(idx)}
-                className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all ${activeImage === idx ? 'border-blue-500 ring-2 ring-blue-100 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}
-              >
-                <img src={img} className="w-full h-full object-cover" />
-              </button>
-            ))}
-          </div>
-          
-          <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-slate-50 pt-6">
-            <ColorSwatch label="Roof" colorName={analysis.colors.roof} />
-            <ColorSwatch label="Wall" colorName={analysis.colors.wall} />
-            <ColorSwatch label="Trim" colorName={analysis.colors.trim} />
-            <ColorSwatch label="Wainscot" colorName={analysis.colors.wainscot} />
+          <div className="flex-grow min-w-0">
+             <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Short Display Title</p>
+             <input 
+               type="text" value={analysis.productTitleShort} 
+               onChange={(e) => setAnalysis(prev => ({ ...prev, productTitleShort: e.target.value }))}
+               className="w-full text-lg font-black text-slate-900 outline-none focus:text-blue-600 transition-colors bg-transparent truncate"
+             />
           </div>
         </div>
 
-        {/* Right: Specs & Features */}
-        <div className="space-y-6">
-          <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 p-4 opacity-10">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
-             </div>
-             
-             <div className="flex justify-between items-start mb-4">
-               <h3 className="text-blue-400 font-bold text-xs uppercase tracking-widest">Structural Scaling</h3>
-               <ConfidenceBadge score={analysis.dimensions.confidence} />
-             </div>
-             
-             <div className="grid grid-cols-3 gap-4 mb-6">
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase mb-1">Gable Width</p>
-                  <p className="text-2xl font-bold">{analysis.dimensions.widthGableSideFeet}' <span className="text-xs font-normal text-slate-500">FT</span></p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase mb-1">Total Length</p>
-                  <p className="text-2xl font-bold">{analysis.dimensions.lengthFeet}' <span className="text-xs font-normal text-slate-500">FT</span></p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase mb-1">Peak Height</p>
-                  <p className="text-2xl font-bold">{analysis.dimensions.peakHeightFeet}' <span className="text-xs font-normal text-slate-500">FT</span></p>
-                </div>
-             </div>
-
-             <div className="border-t border-slate-800 pt-6">
-                <p className="text-slate-400 text-sm mb-1">Estimated Area</p>
-                <div className="flex items-baseline gap-2">
-                  <p className="text-4xl font-extrabold text-blue-400">{analysis.dimensions.estimatedSquareFootage.toLocaleString()}</p>
-                  <span className="text-xl font-medium text-blue-400/60 uppercase">SQ.FT.</span>
-                </div>
-             </div>
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="bg-slate-800 p-3 rounded-2xl shadow-lg shadow-slate-100 flex-shrink-0">
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+             </svg>
           </div>
+          <div className="flex-grow min-w-0">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Full SEO Title</p>
+             <input 
+               type="text" value={analysis.productTitleLong} 
+               onChange={(e) => setAnalysis(prev => ({ ...prev, productTitleLong: e.target.value }))}
+               className="w-full text-sm font-bold text-slate-600 outline-none focus:text-blue-600 transition-colors bg-transparent truncate"
+             />
+          </div>
+        </div>
+      </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-slate-500 font-bold text-xs uppercase tracking-widest">Bay & Feature Count</h3>
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Cross-Verified Data</div>
-            </div>
-            
-            {/* Bay Analysis Row */}
-            <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-6 flex justify-between items-center">
-               <div className="flex items-center gap-3">
-                  <div className="bg-blue-600 text-white w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xl">
-                    {analysis.features.bays.count}
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-blue-900 uppercase">Structural Bays</h4>
-                    <p className="text-[10px] text-blue-700">Estimated {analysis.features.bays.estimatedSpacingFeet}' Spacing</p>
-                  </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+        <VarTile 
+          label="WIDTH (OUTER)" value={vars?.width?.value ?? 0} unit="FT" icon="↔️" 
+          thought={vars?.width?.thought ?? ''} 
+          onValueChange={(v) => updateVariable('width', 'value', Number(v))}
+          onThoughtChange={(t) => updateVariable('width', 'thought', t)}
+        />
+        <VarTile 
+          label="LENGTH (DEPTH)" value={vars?.length?.value ?? 0} unit="FT" icon="↕️" 
+          thought={vars?.length?.thought ?? ''}
+          onValueChange={(v) => updateVariable('length', 'value', Number(v))}
+          onThoughtChange={(t) => updateVariable('length', 'thought', t)}
+        />
+        <VarTile 
+          label="SIDE HEIGHT" value={vars?.wallHeight?.value ?? 0} unit="FT" icon="📏" 
+          thought={vars?.wallHeight?.thought ?? ''}
+          onValueChange={(v) => updateVariable('wallHeight', 'value', Number(v))}
+          onThoughtChange={(t) => updateVariable('wallHeight', 'thought', t)}
+        />
+        <VarTile 
+          label="ROOF PITCH" value={vars?.pitch?.value ?? '3/12'} unit="" icon="📐" 
+          thought={vars?.pitch?.thought ?? ''}
+          onValueChange={(v) => updateVariable('pitch', 'value', v)}
+          onThoughtChange={(t) => updateVariable('pitch', 'thought', t)}
+        />
+        <VarTile 
+          label="ROLL-UP DOORS" value={feats?.garageDoors?.total ?? 0} unit="QTY" icon="🚗" 
+          thought={feats?.garageDoors?.thought ?? ''}
+          onValueChange={(v) => updateFeature('garageDoors', 'total', Number(v))}
+          onThoughtChange={(t) => updateFeature('garageDoors', 'thought', t)}
+        />
+        <VarTile 
+          label="WALK-IN DOORS" value={feats?.manDoors?.total ?? 0} unit="QTY" icon="🚪" 
+          thought={feats?.manDoors?.thought ?? ''}
+          onValueChange={(v) => updateFeature('manDoors', 'total', Number(v))}
+          onThoughtChange={(t) => updateFeature('manDoors', 'thought', t)}
+        />
+        <VarTile 
+          label="WINDOWS" value={feats?.windows?.total ?? 0} unit="QTY" icon="🪟" 
+          thought={feats?.windows?.thought ?? ''}
+          onValueChange={(v) => updateFeature('windows', 'total', Number(v))}
+          onThoughtChange={(t) => updateFeature('windows', 'thought', t)}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-4 space-y-6">
+           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Confidence Scores</h3>
+              <div className="space-y-4">
+                 <ConfidenceBar label="Sizing Confidence" value={analysis.confidence?.sizing ?? 0} color="bg-blue-500" />
+                 <ConfidenceBar label="Color Confidence" value={analysis.confidence?.colors ?? 0} color="bg-emerald-500" />
+              </div>
+           </div>
+
+           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Detected Colors</h3>
+             <div className="space-y-2">
+                <ColorBlock label="Roof" name={analysis.colors?.roof ?? 'N/A'} hex={colorMap[analysis.colors?.roof] || '#eee'} />
+                <ColorBlock label="Wall" name={analysis.colors?.wall ?? 'N/A'} hex={colorMap[analysis.colors?.wall] || '#eee'} />
+                <ColorBlock label="Trim" name={analysis.colors?.trim ?? 'N/A'} hex={colorMap[analysis.colors?.trim] || '#eee'} />
+                <ColorBlock label="Wainscot" name={analysis.colors?.wainscot ?? 'N/A'} hex={colorMap[analysis.colors?.wainscot] || '#eee'} />
+             </div>
+             <div className="mt-4 pt-4 border-t border-slate-50">
+                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Audit Insight:</p>
+                <p className="text-[11px] text-slate-600 font-medium italic leading-tight">{analysis.colors?.thought ?? 'No insight.'}</p>
+             </div>
+           </div>
+
+           <div className="bg-slate-900 p-6 rounded-3xl shadow-xl">
+             <h3 className="text-xs font-bold text-blue-400 uppercase mb-4 tracking-widest">Visual Variant</h3>
+             <img src={mainUrl} className="w-full aspect-video object-cover rounded-xl mb-4 border border-white/5" />
+             <button 
+               onClick={handle3DGen} disabled={isGenerating}
+               className="w-full py-4 bg-blue-600 rounded-xl text-xs font-black uppercase hover:bg-blue-500 transition-all disabled:opacity-50"
+             >
+               {isGenerating ? 'Rendering Engine...' : 'Generate 3D Visual'}
+             </button>
+             {generatedUrl && (
+               <div className="mt-4 animate-in zoom-in">
+                 <img src={generatedUrl} className="w-full rounded-xl border-2 border-white/10 shadow-lg" />
                </div>
-               <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Scale Factor</p>
-                  <p className="text-sm font-bold text-blue-800">{analysis.features.bays.count} x {analysis.features.bays.estimatedSpacingFeet}ft</p>
-               </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <FeatureCard icon="🚪" label="Garage" count={analysis.features.garageDoors.total} />
-              <FeatureCard icon="🚶" label="Man Doors" count={analysis.features.manDoors.total} />
-              <FeatureCard icon="🪟" label="Windows" count={analysis.features.windows} />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-50">
-              <BreakdownList title="Garage Door Placement" items={analysis.features.garageDoors.breakdown} />
-              <BreakdownList title="Man Door Placement" items={analysis.features.manDoors.breakdown} />
-            </div>
-          </div>
+             )}
+           </div>
         </div>
-      </div>
 
-      <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl">
-        <h3 className="flex items-center gap-2 text-slate-800 font-bold text-sm uppercase tracking-wider mb-3">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-          </svg>
-          Logic Verification (Bay-to-Scale)
-        </h3>
-        <p className="text-slate-600 leading-relaxed italic mb-4 text-sm bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-          "{analysis.dimensions.estimationLogic}"
-        </p>
-        <div className="text-[10px] text-slate-400 uppercase font-bold flex justify-between">
-          <span>* Multi-angle cross-referencing enabled</span>
-          <span>© SteelStructure AI Systems</span>
+        <div className="lg:col-span-8 space-y-6">
+           <div className="bg-white p-1 rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+             <div className="bg-slate-50 p-8 rounded-[2.2rem] border border-white">
+                <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-6 flex items-center gap-2">
+                  <span className="w-8 h-[1px] bg-blue-600"></span>
+                  World-Class Sales Description
+                </h3>
+                <textarea 
+                  value={analysis.descriptions?.actualSalesCopy ?? ''}
+                  onChange={(e) => setAnalysis(prev => ({ ...prev, descriptions: { ...prev.descriptions, actualSalesCopy: e.target.value } }))}
+                  className="w-full bg-transparent text-xl text-slate-800 leading-snug font-medium italic outline-none focus:ring-2 focus:ring-blue-100 rounded-lg p-2 min-h-[400px]"
+                />
+             </div>
+           </div>
+
+           <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl border border-slate-800">
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Markdown Template (Dynamic)</h3>
+                <span className="text-[10px] text-blue-400 font-bold uppercase">Uses Placeholders</span>
+             </div>
+             <textarea 
+               value={analysis.descriptions?.templateMarkdown ?? ''}
+               onChange={(e) => setAnalysis(prev => ({ ...prev, descriptions: { ...prev.descriptions, templateMarkdown: e.target.value } }))}
+               className="w-full h-96 bg-black/30 text-blue-100/70 font-mono text-[11px] p-6 rounded-2xl border border-white/5 outline-none focus:ring-1 focus:ring-white/20"
+             />
+           </div>
         </div>
       </div>
     </div>
   );
 };
 
-const ColorSwatch: React.FC<{ label: string; colorName: string }> = ({ label, colorName }) => {
-  const bgColor = COLOR_MAP[colorName] || "#f1f5f9";
-  const isNA = colorName === 'N/A';
-  
+const VarTile: React.FC<{ 
+  label: string; value: string | number; unit: string; icon: string; thought: string; 
+  onValueChange: (v: string) => void; onThoughtChange: (t: string) => void;
+}> = ({ label, value, unit, icon, thought, onValueChange, onThoughtChange }) => {
+  const [isEditingThought, setIsEditingThought] = useState(false);
+
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div 
-        className={`w-10 h-10 rounded-lg shadow-inner border border-slate-200 flex items-center justify-center text-[9px] overflow-hidden ${isNA ? 'bg-slate-100' : ''}`} 
-        style={{ backgroundColor: bgColor }}
-      >
-        {isNA ? <span className="text-slate-300">N/A</span> : ''}
+    <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center hover:shadow-lg transition-all group relative">
+      <div className="text-xl mb-1">{icon}</div>
+      <p className="text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">{label}</p>
+      <div className="flex items-center justify-center gap-0.5">
+        <input 
+          type="text" value={value} 
+          onChange={e => onValueChange(e.target.value)}
+          className="text-2xl font-black text-slate-900 w-full bg-transparent text-center focus:outline-none focus:text-blue-600 px-1"
+        />
+        <span className="text-[9px] text-blue-500 font-black">{unit}</span>
       </div>
-      <div className="text-center">
-        <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">{label}</p>
-        <p className="text-[10px] font-semibold text-slate-700 truncate max-w-[70px] mt-0.5">
-          {colorName}
-        </p>
+      
+      <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-slate-800 text-white text-[9px] rounded-2xl opacity-0 group-hover:opacity-100 transition-all z-50 shadow-2xl border border-slate-700 pointer-events-auto">
+        <div className="flex justify-between items-center mb-1">
+          <span className="text-blue-400 font-black uppercase tracking-widest">AI Reasoning</span>
+          <button onClick={() => setIsEditingThought(!isEditingThought)} className="text-[8px] underline">Edit</button>
+        </div>
+        {isEditingThought ? (
+          <textarea 
+            className="w-full bg-slate-900 p-1 text-white border border-slate-600 rounded outline-none"
+            value={thought}
+            onChange={(e) => onThoughtChange(e.target.value)}
+          />
+        ) : (
+          <p className="text-slate-300 font-medium italic leading-tight text-left">{thought || 'No insights available.'}</p>
+        )}
       </div>
     </div>
   );
 };
 
-const FeatureCard: React.FC<{ icon: string; label: string; count: number }> = ({ icon, label, count }) => (
-  <div className="bg-slate-50 p-4 rounded-xl flex flex-col items-center justify-center border border-slate-100">
-    <span className="text-2xl mb-1">{icon}</span>
-    <span className="text-2xl font-bold text-slate-800">{count}</span>
-    <span className="text-[10px] font-bold text-slate-400 uppercase text-center leading-none mt-1">{label}</span>
+const ConfidenceBar: React.FC<{ label: string; value: number; color: string }> = ({ label, value, color }) => (
+  <div className="space-y-1">
+    <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+       <span>{label}</span>
+       <span className="text-slate-900">{Math.round((value || 0) * 100)}%</span>
+    </div>
+    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+       <div className={`h-full ${color} transition-all duration-1000`} style={{ width: `${(value || 0) * 100}%` }}></div>
+    </div>
   </div>
 );
 
-const BreakdownList: React.FC<{ title: string; items: WallBreakdown[] }> = ({ title, items }) => (
-  <div className="space-y-2">
-    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{title}</h4>
-    {items.length > 0 ? (
-      <ul className="space-y-1">
-        {items.map((item, idx) => (
-          <li key={idx} className="flex justify-between items-center text-sm py-1 border-b border-slate-50 last:border-0">
-            <span className="text-slate-600 font-medium">{item.wall}</span>
-            <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded text-xs font-bold">{item.count}</span>
-          </li>
-        ))}
-      </ul>
-    ) : (
-      <p className="text-xs text-slate-400 italic">None detected</p>
-    )}
+const ColorBlock: React.FC<{ label: string; name: string; hex: string }> = ({ label, name, hex }) => (
+  <div className="flex items-center gap-3 bg-slate-50 p-1.5 pr-4 rounded-xl border border-slate-100 transition-all">
+    <div className="w-8 h-8 rounded-lg shadow-sm border border-black/5 flex-shrink-0" style={{ backgroundColor: hex }} />
+    <div className="flex-grow overflow-hidden">
+      <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+      <p className="text-[10px] font-black text-slate-800 truncate">{name}</p>
+    </div>
   </div>
 );
 
