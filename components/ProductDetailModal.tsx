@@ -7,9 +7,10 @@ interface ProductDetailModalProps {
   colorPalette: ColorPaletteItem[];
   onClose: () => void;
   onEdit: () => void;
+  onViewImage: (url: string) => void;
 }
 
-const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, colorPalette, onClose, onEdit }) => {
+const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, colorPalette, onClose, onEdit, onViewImage }) => {
   const [activeTab, setActiveTab] = useState<'copy' | 'template'>('copy');
 
   const colorMap = colorPalette.reduce((acc, curr) => ({
@@ -25,7 +26,11 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, colorP
         {/* Header Section */}
         <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50/50 gap-6">
           <div className="flex gap-6 items-center flex-grow min-w-0">
-            <div className="w-28 h-28 rounded-[2rem] overflow-hidden border-4 border-white shadow-2xl flex-shrink-0 bg-slate-200">
+            <div 
+              className="w-28 h-28 rounded-[2rem] overflow-hidden border-4 border-white shadow-2xl flex-shrink-0 bg-slate-200 cursor-zoom-in hover:scale-105 transition-transform"
+              onClick={() => onViewImage(product.imageUrl)}
+              title="Click for full resolution"
+            >
                <img src={product.imageUrl} className="w-full h-full object-cover" alt="Building Asset" />
             </div>
             <div className="min-w-0">

@@ -11,10 +11,11 @@ interface AnalysisResultProps {
   isGenerating: boolean;
   generatedUrl: string | null;
   colorPalette: ColorPaletteItem[];
+  onViewImage: (url: string) => void;
 }
 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ 
-  analysis, onChange, mainUrl, onGenerateImage, isGenerating, generatedUrl, colorPalette
+  analysis, onChange, mainUrl, onGenerateImage, isGenerating, generatedUrl, colorPalette, onViewImage
 }) => {
   const colorMap = useMemo(() => colorPalette.reduce((acc, curr) => ({
     ...acc,
@@ -214,7 +215,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
            <div className="bg-slate-900 p-6 rounded-3xl shadow-xl">
              <h3 className="text-xs font-bold text-blue-400 uppercase mb-4 tracking-widest">Visual Variant</h3>
-             <img src={mainUrl} className="w-full aspect-video object-cover rounded-xl mb-4 border border-white/5" />
+             <img 
+              src={mainUrl} 
+              className="w-full aspect-video object-cover rounded-xl mb-4 border border-white/5 cursor-zoom-in hover:brightness-110 transition-all" 
+              onClick={() => onViewImage(mainUrl)}
+              alt="Reference"
+             />
              <button 
                onClick={handle3DGen} disabled={isGenerating}
                className="w-full py-4 bg-blue-600 rounded-xl text-xs font-black uppercase hover:bg-blue-500 transition-all disabled:opacity-50"
@@ -223,7 +229,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
              </button>
              {generatedUrl && (
                <div className="mt-4 animate-in zoom-in">
-                 <img src={generatedUrl} className="w-full rounded-xl border-2 border-white/10 shadow-lg" />
+                 <img 
+                  src={generatedUrl} 
+                  className="w-full rounded-xl border-2 border-white/10 shadow-lg cursor-zoom-in hover:brightness-110 transition-all" 
+                  onClick={() => onViewImage(generatedUrl)}
+                  alt="Generated"
+                 />
                </div>
              )}
            </div>

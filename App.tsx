@@ -81,6 +81,8 @@ const App: React.FC = () => {
     };
   });
 
+  const [fullImageViewUrl, setFullImageViewUrl] = useState<string | null>(null);
+
   useEffect(() => {
     localStorage.setItem('ss_websites', JSON.stringify(state.websites));
     localStorage.setItem('ss_inventory', JSON.stringify(state.inventory));
@@ -141,7 +143,6 @@ const App: React.FC = () => {
         }
       }));
 
-      // Trigger auto-save logic after brief delay for visual confirmation
       setState(current => {
         if (current.autoProcess) {
           setTimeout(() => triggerAutoSave(updatedResult, img), 1500);
@@ -206,7 +207,6 @@ const App: React.FC = () => {
       const nextImage = s.queue[0] || null;
       const nextQueue = s.queue.slice(1);
 
-      // Automatically move to the next image if one exists and auto-pilot is on
       if (nextImage && !isEditing && s.autoProcess) {
         setTimeout(() => runAnalysis(nextImage), 100);
       }
@@ -231,7 +231,6 @@ const App: React.FC = () => {
       let nextMain = s.mainImage;
       let finalQueue = newQueue;
 
-      // Start the engine if it is currently idle
       if (!s.mainImage && !s.loading && newQueue.length > 0) {
         nextMain = newQueue[0];
         finalQueue = newQueue.slice(1);
@@ -245,7 +244,6 @@ const App: React.FC = () => {
         };
       }
 
-      // Otherwise just add to queue
       return {
         ...s,
         queue: newQueue
@@ -314,12 +312,25 @@ const App: React.FC = () => {
         onOpenInventory={() => setState(s => ({ ...s, view: 'inventory' }))}
       />
 
+      {fullImageViewUrl && (
+        <div 
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-xl animate-in fade-in duration-300 cursor-zoom-out" 
+          onClick={() => setFullImageViewUrl(null)}
+        >
+          <img src={fullImageViewUrl} className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" alt="Full View" />
+          <button className="absolute top-8 right-8 text-white p-4 bg-white/10 hover:bg-white/20 rounded-full transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
       {viewingProduct && (
         <ProductDetailModal 
           product={viewingProduct} 
           colorPalette={state.colorPalette}
           onClose={() => setState(s => ({ ...s, viewingProductId: null }))} 
           onEdit={() => handleEditProduct(viewingProduct)}
+          onViewImage={setFullImageViewUrl}
         />
       )}
       
@@ -376,12 +387,22 @@ const App: React.FC = () => {
                           <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                             <td className="py-6">
                                <div 
-                                 onClick={() => setState(s => ({ ...s, viewingProductId: item.id }))}
-                                 className="w-24 h-16 bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative group/img cursor-zoom-in"
+                                 className="w-24 h-16 bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative group/img cursor-pointer"
                                >
                                   <img src={item.imageUrl} className="w-full h-full object-cover" />
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                                    <span className="text-white text-[8px] font-black uppercase tracking-widest">View Specs</span>
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setFullImageViewUrl(item.imageUrl); }}
+                                      className="text-white text-[7px] font-black uppercase tracking-widest bg-blue-600/80 px-2 py-1 rounded hover:bg-blue-600"
+                                    >
+                                      Large View
+                                    </button>
+                                    <button 
+                                      onClick={() => setState(s => ({ ...s, viewingProductId: item.id }))}
+                                      className="text-white text-[7px] font-black uppercase tracking-widest bg-slate-900/80 px-2 py-1 rounded hover:bg-slate-900"
+                                    >
+                                      Specs
+                                    </button>
                                   </div>
                                </div>
                             </td>
@@ -480,7 +501,10 @@ const App: React.FC = () => {
                   
                   {state.mainImage && (
                     <div className={`p-4 rounded-[2rem] border-2 bg-white flex items-center gap-4 transition-all shadow-sm ${state.loading ? 'border-blue-500 animate-pulse' : 'border-blue-100'}`}>
-                       <div className="w-16 h-12 bg-slate-100 rounded-xl overflow-hidden shrink-0">
+                       <div 
+                        className="w-16 h-12 bg-slate-100 rounded-xl overflow-hidden shrink-0 cursor-zoom-in"
+                        onClick={() => setFullImageViewUrl(state.mainImage)}
+                       >
                          <img src={state.mainImage} className="w-full h-full object-cover" />
                        </div>
                        <div className="flex-grow min-w-0">
@@ -492,7 +516,10 @@ const App: React.FC = () => {
 
                   {state.queue.map((img, i) => (
                     <div key={i} className="p-3 rounded-2xl bg-white/40 border border-transparent flex items-center gap-4 group transition-all">
-                       <div className="w-12 h-10 bg-slate-100 rounded-xl overflow-hidden shrink-0 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100">
+                       <div 
+                        className="w-12 h-10 bg-slate-100 rounded-xl overflow-hidden shrink-0 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 cursor-zoom-in"
+                        onClick={() => setFullImageViewUrl(img)}
+                       >
                          <img src={img} className="w-full h-full object-cover" />
                        </div>
                        <p className="text-[9px] font-black text-slate-400 uppercase truncate flex-grow">Queued Asset</p>
@@ -551,6 +578,7 @@ const App: React.FC = () => {
                           generatedUrl={state.generatedVariantUrl}
                           onGenerateImage={(url) => setState(s => ({ ...s, generatedVariantUrl: url, generatingImage: false }))}
                           colorPalette={state.colorPalette}
+                          onViewImage={setFullImageViewUrl}
                         />
                         <div className="sticky bottom-6 mt-8 bg-slate-900 rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl border border-slate-800 z-50">
                           <div className="text-white text-center md:text-left">
@@ -581,7 +609,10 @@ const App: React.FC = () => {
                       </div>
                     ) : state.mainImage ? (
                        <div className="flex flex-col items-center justify-center py-40">
-                         <div className="w-40 h-40 bg-white rounded-[3rem] shadow-2xl flex items-center justify-center mb-8 border border-slate-100 overflow-hidden">
+                         <div 
+                          className="w-40 h-40 bg-white rounded-[3rem] shadow-2xl flex items-center justify-center mb-8 border border-slate-100 overflow-hidden cursor-zoom-in"
+                          onClick={() => setFullImageViewUrl(state.mainImage)}
+                         >
                            <img src={state.mainImage} className="w-full h-full object-cover opacity-50" />
                          </div>
                          <button 
