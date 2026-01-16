@@ -136,6 +136,7 @@ export interface AppState {
   selectedWebsiteId: string;
   inventory: CreatedProduct[];
   editingProductId: string | null;
+  viewingProductId: string | null; // Track which product is being viewed in detail
   settings: {
     steelFrame: SteelFrameType;
     state: string;

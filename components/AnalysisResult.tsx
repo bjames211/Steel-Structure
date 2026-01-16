@@ -5,6 +5,7 @@ import { generate3DVariant } from '../services/geminiService';
 
 interface AnalysisResultProps {
   analysis: BuildingAnalysis;
+  onChange: (updated: BuildingAnalysis) => void;
   mainUrl: string;
   onGenerateImage: (url: string) => void;
   isGenerating: boolean;
@@ -13,10 +14,8 @@ interface AnalysisResultProps {
 }
 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ 
-  analysis: initialAnalysis, mainUrl, onGenerateImage, isGenerating, generatedUrl, colorPalette
+  analysis, onChange, mainUrl, onGenerateImage, isGenerating, generatedUrl, colorPalette
 }) => {
-  const [analysis, setAnalysis] = useState<BuildingAnalysis>(initialAnalysis);
-
   const colorMap = useMemo(() => colorPalette.reduce((acc, curr) => ({
     ...acc,
     [curr.name]: curr.hex
@@ -32,23 +31,33 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
   };
 
   const updateVariable = (key: keyof BuildingAnalysis['variables'], field: 'value' | 'thought', val: string | number) => {
-    setAnalysis(prev => ({
-      ...prev,
+    onChange({
+      ...analysis,
       variables: {
-        ...prev.variables,
-        [key]: { ...prev.variables[key], [field]: val }
+        ...analysis.variables,
+        [key]: { ...analysis.variables[key], [field]: val }
       }
-    }));
+    });
   };
 
   const updateFeature = (key: keyof BuildingAnalysis['features'], field: 'total' | 'thought', val: string | number) => {
-    setAnalysis(prev => ({
-      ...prev,
+    onChange({
+      ...analysis,
       features: {
-        ...prev.features,
-        [key]: { ...prev.features[key], [field]: val }
+        ...analysis.features,
+        [key]: { ...analysis.features[key], [field]: val }
       }
-    }));
+    });
+  };
+
+  const updateColor = (type: 'roof' | 'wall' | 'trim' | 'wainscot', val: string) => {
+    onChange({
+      ...analysis,
+      colors: {
+        ...analysis.colors,
+        [type]: val
+      }
+    });
   };
 
   const vars = analysis.variables;
@@ -58,7 +67,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
       
       {/* Product Identity Header */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
           <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100 flex-shrink-0">
              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -69,7 +78,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Short Display Title</p>
              <input 
                type="text" value={analysis.productTitleShort} 
-               onChange={(e) => setAnalysis(prev => ({ ...prev, productTitleShort: e.target.value }))}
+               onChange={(e) => onChange({ ...analysis, productTitleShort: e.target.value })}
                className="w-full text-lg font-black text-slate-900 outline-none focus:text-blue-600 transition-colors bg-transparent truncate"
              />
           </div>
@@ -85,8 +94,22 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Full SEO Title</p>
              <input 
                type="text" value={analysis.productTitleLong} 
-               onChange={(e) => setAnalysis(prev => ({ ...prev, productTitleLong: e.target.value }))}
+               onChange={(e) => onChange({ ...analysis, productTitleLong: e.target.value })}
                className="w-full text-sm font-bold text-slate-600 outline-none focus:text-blue-600 transition-colors bg-transparent truncate"
+             />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="bg-slate-100 p-3 rounded-2xl flex-shrink-0">
+             <span className="text-xl">🏷️</span>
+          </div>
+          <div className="flex-grow min-w-0">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Inventory SKU</p>
+             <input 
+               type="text" value={analysis.sku} 
+               onChange={(e) => onChange({ ...analysis, sku: e.target.value })}
+               className="w-full text-lg font-black text-slate-900 outline-none focus:text-blue-600 transition-colors bg-transparent truncate"
              />
           </div>
         </div>
@@ -149,15 +172,43 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Detected Colors</h3>
-             <div className="space-y-2">
-                <ColorBlock label="Roof" name={analysis.colors?.roof ?? 'N/A'} hex={colorMap[analysis.colors?.roof] || '#eee'} />
-                <ColorBlock label="Wall" name={analysis.colors?.wall ?? 'N/A'} hex={colorMap[analysis.colors?.wall] || '#eee'} />
-                <ColorBlock label="Trim" name={analysis.colors?.trim ?? 'N/A'} hex={colorMap[analysis.colors?.trim] || '#eee'} />
-                <ColorBlock label="Wainscot" name={analysis.colors?.wainscot ?? 'N/A'} hex={colorMap[analysis.colors?.wainscot] || '#eee'} />
+             <div className="space-y-3">
+                <ColorSelect 
+                  label="Roof" 
+                  value={analysis.colors?.roof} 
+                  palette={colorPalette} 
+                  onChange={(v) => updateColor('roof', v)} 
+                  colorMap={colorMap}
+                />
+                <ColorSelect 
+                  label="Wall" 
+                  value={analysis.colors?.wall} 
+                  palette={colorPalette} 
+                  onChange={(v) => updateColor('wall', v)} 
+                  colorMap={colorMap}
+                />
+                <ColorSelect 
+                  label="Trim" 
+                  value={analysis.colors?.trim} 
+                  palette={colorPalette} 
+                  onChange={(v) => updateColor('trim', v)} 
+                  colorMap={colorMap}
+                />
+                <ColorSelect 
+                  label="Wainscot" 
+                  value={analysis.colors?.wainscot} 
+                  palette={colorPalette} 
+                  onChange={(v) => updateColor('wainscot', v)} 
+                  colorMap={colorMap}
+                />
              </div>
              <div className="mt-4 pt-4 border-t border-slate-50">
-                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Audit Insight:</p>
-                <p className="text-[11px] text-slate-600 font-medium italic leading-tight">{analysis.colors?.thought ?? 'No insight.'}</p>
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Audit Insight</p>
+                <textarea 
+                  value={analysis.colors?.thought ?? ''}
+                  onChange={(e) => onChange({ ...analysis, colors: { ...analysis.colors, thought: e.target.value } })}
+                  className="w-full text-[11px] text-slate-600 font-medium italic leading-tight bg-slate-50 p-3 rounded-xl border border-slate-100 outline-none focus:ring-2 focus:ring-blue-100 min-h-[80px]"
+                />
              </div>
            </div>
 
@@ -187,7 +238,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
                 </h3>
                 <textarea 
                   value={analysis.descriptions?.actualSalesCopy ?? ''}
-                  onChange={(e) => setAnalysis(prev => ({ ...prev, descriptions: { ...prev.descriptions, actualSalesCopy: e.target.value } }))}
+                  onChange={(e) => onChange({ ...analysis, descriptions: { ...analysis.descriptions, actualSalesCopy: e.target.value } })}
                   className="w-full bg-transparent text-xl text-slate-800 leading-snug font-medium italic outline-none focus:ring-2 focus:ring-blue-100 rounded-lg p-2 min-h-[400px]"
                 />
              </div>
@@ -200,7 +251,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
              </div>
              <textarea 
                value={analysis.descriptions?.templateMarkdown ?? ''}
-               onChange={(e) => setAnalysis(prev => ({ ...prev, descriptions: { ...prev.descriptions, templateMarkdown: e.target.value } }))}
+               onChange={(e) => onChange({ ...analysis, descriptions: { ...analysis.descriptions, templateMarkdown: e.target.value } })}
                className="w-full h-96 bg-black/30 text-blue-100/70 font-mono text-[11px] p-6 rounded-2xl border border-white/5 outline-none focus:ring-1 focus:ring-white/20"
              />
            </div>
@@ -209,6 +260,31 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({
     </div>
   );
 };
+
+const ColorSelect: React.FC<{ 
+  label: string; 
+  value: string; 
+  palette: ColorPaletteItem[]; 
+  onChange: (v: string) => void;
+  colorMap: Record<string, string>;
+}> = ({ label, value, palette, onChange, colorMap }) => (
+  <div className="space-y-1">
+    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">{label} Finish</p>
+    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
+      <div className="w-8 h-8 rounded-lg shadow-sm border border-black/5 flex-shrink-0" style={{ backgroundColor: colorMap[value] || '#eee' }} />
+      <select 
+        value={value} 
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-grow bg-transparent text-[11px] font-black text-slate-800 uppercase outline-none"
+      >
+        <option value="N/A">N/A</option>
+        {palette.map(p => (
+          <option key={p.name} value={p.name}>{p.name}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+);
 
 const VarTile: React.FC<{ 
   label: string; value: string | number; unit: string; icon: string; thought: string; 
@@ -256,16 +332,6 @@ const ConfidenceBar: React.FC<{ label: string; value: number; color: string }> =
     </div>
     <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
        <div className={`h-full ${color} transition-all duration-1000`} style={{ width: `${(value || 0) * 100}%` }}></div>
-    </div>
-  </div>
-);
-
-const ColorBlock: React.FC<{ label: string; name: string; hex: string }> = ({ label, name, hex }) => (
-  <div className="flex items-center gap-3 bg-slate-50 p-1.5 pr-4 rounded-xl border border-slate-100 transition-all">
-    <div className="w-8 h-8 rounded-lg shadow-sm border border-black/5 flex-shrink-0" style={{ backgroundColor: hex }} />
-    <div className="flex-grow overflow-hidden">
-      <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-      <p className="text-[10px] font-black text-slate-800 truncate">{name}</p>
     </div>
   </div>
 );

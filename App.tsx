@@ -4,6 +4,7 @@ import Header from './components/Header';
 import ImageUploader from './components/ImageUploader';
 import AnalysisResult from './components/AnalysisResult';
 import WebsiteSettings from './components/WebsiteSettings';
+import ProductDetailModal from './components/ProductDetailModal';
 import { AppState, SteelFrameType, WebsiteConfig, CreatedProduct, BuildingAnalysis, ColorPaletteItem } from './types';
 import { analyzeBuildingImage } from './services/geminiService';
 
@@ -69,6 +70,7 @@ const App: React.FC = () => {
       selectedWebsiteId: savedWebsites ? JSON.parse(savedWebsites)[0]?.id || DEFAULT_WEBSITE.id : DEFAULT_WEBSITE.id,
       inventory: savedInventory ? JSON.parse(savedInventory) : [],
       editingProductId: null,
+      viewingProductId: null,
       settings: {
         steelFrame: 'Red Iron',
         state: 'ALL'
@@ -89,7 +91,7 @@ const App: React.FC = () => {
 
   const runAnalysis = useCallback(async (img: string) => {
     if (!img) return;
-    setState(s => ({ ...s, loading: true, error: null, result: null }));
+    setState(s => ({ ...s, loading: true, error: null, result: null, mainImage: img }));
     try {
       const result = await analyzeBuildingImage(
         img, 
@@ -139,22 +141,25 @@ const App: React.FC = () => {
         }
       }));
 
-      // If Auto-Pilot is on, trigger save after a brief delay
-      if (state.autoProcess) {
-        setTimeout(() => triggerAutoSave(updatedResult, img), 1500);
-      }
+      // Trigger auto-save logic after brief delay for visual confirmation
+      setState(current => {
+        if (current.autoProcess) {
+          setTimeout(() => triggerAutoSave(updatedResult, img), 1500);
+        }
+        return current;
+      });
 
     } catch (err: any) {
       console.error("Analysis Error:", err);
       setState(s => ({ ...s, loading: false, error: err.message || "Engine failure." }));
     }
-  }, [state.colorPalette, activeWebsite, state.autoProcess]);
+  }, [state.colorPalette, activeWebsite]);
 
   const triggerAutoSave = (res: BuildingAnalysis, img: string) => {
     setState(s => {
-      // Check if we already have this as a result (avoid double save)
+      const isEditing = !!s.editingProductId;
       const productData: CreatedProduct = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: s.editingProductId || Math.random().toString(36).substr(2, 9),
         timestamp: Date.now(),
         sku: res.sku,
         productTitleShort: res.productTitleShort,
@@ -189,17 +194,27 @@ const App: React.FC = () => {
         fullAnalysis: res
       };
 
+      let newInventory = [...s.inventory];
+      if (isEditing) {
+        newInventory = newInventory.map(p => p.id === s.editingProductId ? productData : p);
+      } else {
+        if (!newInventory.some(p => p.id === productData.id)) {
+          newInventory = [productData, ...newInventory];
+        }
+      }
+
       const nextImage = s.queue[0] || null;
       const nextQueue = s.queue.slice(1);
 
-      if (nextImage) {
+      // Automatically move to the next image if one exists and auto-pilot is on
+      if (nextImage && !isEditing && s.autoProcess) {
         setTimeout(() => runAnalysis(nextImage), 100);
       }
 
       return {
         ...s,
-        inventory: [productData, ...s.inventory],
-        result: null,
+        inventory: newInventory,
+        result: nextImage ? null : (isEditing ? null : null),
         mainImage: nextImage,
         queue: nextQueue,
         variantImage: null,
@@ -216,23 +231,24 @@ const App: React.FC = () => {
       let nextMain = s.mainImage;
       let finalQueue = newQueue;
 
-      // If we don't have a main image and we aren't loading, pick the first one
+      // Start the engine if it is currently idle
       if (!s.mainImage && !s.loading && newQueue.length > 0) {
         nextMain = newQueue[0];
         finalQueue = newQueue.slice(1);
         
-        if (s.autoProcess) {
-          setTimeout(() => runAnalysis(nextMain!), 100);
-        }
-      } else if (s.mainImage && s.autoProcess && !s.loading && !s.result) {
-        // We have a main image but it's not processing yet
-        setTimeout(() => runAnalysis(s.mainImage!), 100);
+        setTimeout(() => runAnalysis(nextMain!), 100);
+        return {
+          ...s,
+          mainImage: nextMain,
+          queue: finalQueue,
+          view: 'analysis'
+        };
       }
 
+      // Otherwise just add to queue
       return {
         ...s,
-        mainImage: nextMain,
-        queue: finalQueue
+        queue: newQueue
       };
     });
   };
@@ -260,6 +276,7 @@ const App: React.FC = () => {
       view: 'analysis',
       selectedWebsiteId: product.websiteId,
       editingProductId: product.id,
+      viewingProductId: null,
       autoProcess: false
     }));
   };
@@ -277,6 +294,7 @@ const App: React.FC = () => {
       result: null,
       view: 'analysis',
       editingProductId: null,
+      viewingProductId: null,
       queue: [],
       settings: { ...prev.settings, state: 'ALL' }
     }));
@@ -287,12 +305,23 @@ const App: React.FC = () => {
     [curr.name]: curr.hex
   }), {});
 
+  const viewingProduct = state.inventory.find(p => p.id === state.viewingProductId);
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <Header 
         onOpenSettings={() => setState(s => ({ ...s, view: 'settings' }))} 
         onOpenInventory={() => setState(s => ({ ...s, view: 'inventory' }))}
       />
+
+      {viewingProduct && (
+        <ProductDetailModal 
+          product={viewingProduct} 
+          colorPalette={state.colorPalette}
+          onClose={() => setState(s => ({ ...s, viewingProductId: null }))} 
+          onEdit={() => handleEditProduct(viewingProduct)}
+        />
+      )}
       
       <main className="flex-grow flex flex-col xl:flex-row h-[calc(100vh-80px)] overflow-hidden">
         {state.view === 'settings' ? (
@@ -313,29 +342,29 @@ const App: React.FC = () => {
                <div className="flex justify-between items-center">
                   <div>
                     <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Vault</h2>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Processed Assets & Global Records</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Characterful Building Record Stack</p>
                   </div>
                   <button 
                     onClick={() => setState(s => ({ ...s, view: 'analysis' }))} 
                     className="bg-blue-600 text-white px-8 py-3 rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-blue-700 transition-all"
                   >
-                    Ingest More
+                    Add More Assets
                   </button>
                </div>
                
                {state.inventory.length === 0 ? (
                  <div className="text-center py-40 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-100">
-                    <span className="text-6xl block mb-6">🏜️</span>
-                    <p className="font-black text-slate-300 uppercase tracking-[0.3em] text-[10px]">No assets currently stored in the vault</p>
+                    <span className="text-6xl block mb-6">🏚️</span>
+                    <p className="font-black text-slate-300 uppercase tracking-[0.3em] text-[10px]">Vault is currently empty</p>
                  </div>
                ) : (
                  <div className="overflow-x-auto">
                     <table className="w-full text-left min-w-[1000px]">
                       <thead>
                         <tr className="text-[10px] text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
-                          <th className="pb-6">Asset</th>
-                          <th className="pb-6">Identity & Region</th>
-                          <th className="pb-6">Dimensions</th>
+                          <th className="pb-6">Building Asset</th>
+                          <th className="pb-6">Identity & SKU</th>
+                          <th className="pb-6">Specs</th>
                           <th className="pb-6">Accessories</th>
                           <th className="pb-6">Colors</th>
                           <th className="pb-6">Confidence</th>
@@ -346,26 +375,30 @@ const App: React.FC = () => {
                         {state.inventory.map(item => (
                           <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                             <td className="py-6">
-                               <div className="w-24 h-16 bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative group/img cursor-zoom-in">
+                               <div 
+                                 onClick={() => setState(s => ({ ...s, viewingProductId: item.id }))}
+                                 className="w-24 h-16 bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative group/img cursor-zoom-in"
+                               >
                                   <img src={item.imageUrl} className="w-full h-full object-cover" />
-                                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span className="text-white text-[8px] font-black uppercase tracking-widest">View Specs</span>
+                                  </div>
                                </div>
                             </td>
                             <td className="py-6 pr-4">
-                               <p className="font-black text-slate-900 text-sm truncate max-w-[240px]" title={item.productTitleLong}>
+                               <p className="font-black text-slate-900 text-sm truncate max-w-[240px]">
                                  {item.productTitleShort}
                                </p>
-                               <p className="text-[9px] text-slate-400 font-bold truncate max-w-[240px] mt-0.5">{item.productTitleLong}</p>
                                <div className="flex gap-2 mt-2">
+                                 <span className="text-[8px] font-black bg-slate-900 text-white px-1.5 py-0.5 rounded uppercase tracking-widest">SKU: {item.sku}</span>
                                  <span className="text-[8px] font-black bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase tracking-widest">{item.brand}</span>
-                                 <span className="text-[8px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-widest">{item.state}</span>
                                </div>
                             </td>
                             <td className="py-6">
                                <p className="text-sm font-black text-slate-800">
                                  {item.dimensions.width}'x{item.dimensions.length}'x{item.dimensions.height}'
                                </p>
-                               <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Pitch: {item.dimensions.pitch}</p>
+                               <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Pitch: {item.dimensions.pitch}</p>
                             </td>
                             <td className="py-6">
                                <div className="flex flex-col gap-1">
@@ -377,10 +410,6 @@ const App: React.FC = () => {
                                    <span className="w-3.5 h-3.5 flex items-center justify-center bg-orange-100 text-orange-600 rounded-sm">D</span>
                                    <span>{item.features.manDoors} Walk-in</span>
                                  </div>
-                                 <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500 uppercase">
-                                   <span className="w-3.5 h-3.5 flex items-center justify-center bg-emerald-100 text-emerald-600 rounded-sm">W</span>
-                                   <span>{item.features.windows} Windows</span>
-                                 </div>
                                </div>
                             </td>
                             <td className="py-6">
@@ -388,7 +417,6 @@ const App: React.FC = () => {
                                   <ColorDot color={item.colors.roof} label="Roof" map={colorMap} />
                                   <ColorDot color={item.colors.wall} label="Wall" map={colorMap} />
                                   <ColorDot color={item.colors.trim} label="Trim" map={colorMap} />
-                                  <ColorDot color={item.colors.wainscot} label="Wain" map={colorMap} />
                                </div>
                             </td>
                             <td className="py-6">
@@ -399,10 +427,13 @@ const App: React.FC = () => {
                             </td>
                             <td className="py-6 text-right">
                                <div className="flex justify-end gap-2">
-                                  <button onClick={() => handleEditProduct(item)} className="p-3 bg-white border border-slate-100 shadow-sm hover:border-blue-200 rounded-xl text-slate-500 hover:text-blue-600 transition-all">
+                                  <button onClick={() => setState(s => ({ ...s, viewingProductId: item.id }))} className="p-2.5 bg-white border border-slate-100 shadow-sm hover:border-blue-200 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                  </button>
+                                  <button onClick={() => handleEditProduct(item)} className="p-2.5 bg-white border border-slate-100 shadow-sm hover:border-blue-200 rounded-xl text-slate-500 hover:text-blue-600 transition-all">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                   </button>
-                                  <button onClick={() => handleDeleteProduct(item.id)} className="p-3 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all">
+                                  <button onClick={() => handleDeleteProduct(item.id)} className="p-2.5 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                   </button>
                                </div>
@@ -417,39 +448,33 @@ const App: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* Sidebar Queue & Controls */}
             <div className="w-full xl:w-96 bg-slate-100/50 border-r border-slate-200 flex flex-col h-full overflow-hidden shrink-0">
                <div className="p-6 space-y-6">
                   <div className="flex justify-between items-center">
-                    <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Batch Engine</h2>
-                    <button onClick={handleReset} className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline transition-all">Reset</button>
+                    <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch Ingestion Pipeline</h2>
+                    <button onClick={handleReset} className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline">Reset</button>
                   </div>
 
                   <div className="space-y-3">
-                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Auto-Pilot Mode</label>
+                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Auto-Sync Ingestion</label>
                      <button 
                        onClick={() => setState(s => ({ ...s, autoProcess: !s.autoProcess }))}
-                       className={`w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all group ${state.autoProcess ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-500/20' : 'bg-white border-white text-slate-400 hover:border-slate-200'}`}
+                       className={`w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all ${state.autoProcess ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-500/20' : 'bg-white border-white text-slate-400 hover:border-slate-200'}`}
                      >
-                       <span className="text-xs font-black uppercase tracking-widest">Auto Ingest</span>
-                       {state.autoProcess ? (
-                         <div className="flex items-center gap-2">
-                           <span className="text-[9px] font-black uppercase tracking-widest">Active</span>
-                           <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span></div>
-                         </div>
-                       ) : <span className="text-[9px] font-black uppercase tracking-widest">Inactive</span>}
+                       <span className="text-xs font-black uppercase tracking-widest">Auto Pilot</span>
+                       <div className="flex items-center gap-2">
+                         <span className="text-[9px] font-black uppercase">{state.autoProcess ? 'Active' : 'Off'}</span>
+                         {state.autoProcess && <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>}
+                       </div>
                      </button>
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Add More To Queue</label>
-                    <ImageUploader onFilesReady={handleFilesReady} mode="sidebar" loading={state.loading} />
-                  </div>
+                  <ImageUploader onFilesReady={handleFilesReady} mode="sidebar" loading={state.loading} />
                </div>
 
                <div className="flex-grow overflow-y-auto p-6 pt-0 space-y-4">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
-                    Ingestion Queue 
+                    Processing Queue 
                     <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-600 font-bold">{state.queue.length + (state.mainImage ? 1 : 0)}</span>
                   </h3>
                   
@@ -459,35 +484,26 @@ const App: React.FC = () => {
                          <img src={state.mainImage} className="w-full h-full object-cover" />
                        </div>
                        <div className="flex-grow min-w-0">
-                         <p className="text-[10px] font-black text-slate-900 uppercase truncate">Current Asset</p>
-                         <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">{state.loading ? 'Ingesting...' : 'Reviewing'}</p>
+                         <p className="text-[10px] font-black text-slate-900 uppercase truncate">Current Build</p>
+                         <p className="text-[9px] font-bold text-blue-500 uppercase mt-0.5 tracking-tight">{state.loading ? 'Syncing...' : (state.editingProductId ? 'Editing Record' : 'Ready')}</p>
                        </div>
                     </div>
                   )}
 
                   {state.queue.map((img, i) => (
-                    <div key={i} className="p-3 rounded-2xl bg-white/40 border border-transparent hover:border-slate-200 flex items-center gap-4 group transition-all">
-                       <div className="w-12 h-10 bg-slate-100 rounded-xl overflow-hidden shrink-0 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all">
+                    <div key={i} className="p-3 rounded-2xl bg-white/40 border border-transparent flex items-center gap-4 group transition-all">
+                       <div className="w-12 h-10 bg-slate-100 rounded-xl overflow-hidden shrink-0 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100">
                          <img src={img} className="w-full h-full object-cover" />
                        </div>
-                       <div className="flex-grow min-w-0">
-                         <p className="text-[9px] font-black text-slate-400 uppercase truncate">Pending Ingest</p>
-                       </div>
+                       <p className="text-[9px] font-black text-slate-400 uppercase truncate flex-grow">Queued Asset</p>
                        <button onClick={() => setState(s => ({ ...s, queue: s.queue.filter((_, idx) => idx !== i) }))} className="p-2 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all">
                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                        </button>
                     </div>
                   ))}
-
-                  {!state.mainImage && state.queue.length === 0 && (
-                    <div className="py-20 text-center opacity-20">
-                      <p className="text-[10px] font-black uppercase tracking-[0.3em]">Queue Empty</p>
-                    </div>
-                  )}
                </div>
             </div>
 
-            {/* Main Content Area */}
             <div className="flex-grow overflow-y-auto bg-slate-50 relative p-6 md:p-10">
                {!state.mainImage && !state.loading && state.queue.length === 0 ? (
                  <div className="max-w-4xl mx-auto h-full flex items-center">
@@ -503,34 +519,33 @@ const App: React.FC = () => {
                             </div>
                             <div>
                                <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Sync Interface</h2>
-                               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Active Logic: {activeWebsite.brand} ({state.settings.state})</p>
+                               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Brand Logic: {activeWebsite.brand}</p>
                             </div>
                          </div>
                       </div>
-                      <div className="flex gap-4 w-full md:w-auto">
-                        <div className="flex-grow min-w-[200px]">
-                           <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1 ml-1">Region Override</label>
-                           <select 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-black uppercase outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                            value={state.settings.state}
-                            onChange={(e) => setState(s => ({ ...s, settings: { ...s.settings, state: e.target.value }}))}
-                           >
-                            {REGIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                           </select>
-                        </div>
+                      <div className="w-full md:w-64">
+                         <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1 ml-1">Override Region</label>
+                         <select 
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] font-black uppercase outline-none"
+                          value={state.settings.state}
+                          onChange={(e) => setState(s => ({ ...s, settings: { ...s.settings, state: e.target.value }}))}
+                         >
+                          {REGIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                         </select>
                       </div>
                     </div>
 
                     {state.loading ? (
                       <div className="flex flex-col items-center justify-center py-40 animate-pulse">
                          <div className="w-24 h-24 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-8 shadow-xl shadow-blue-500/10"></div>
-                         <h3 className="text-xl font-black text-slate-900 tracking-tighter">Synchronizing Engine...</h3>
-                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em] mt-2">Ingesting Architectural DNA</p>
+                         <h3 className="text-xl font-black text-slate-900 tracking-tighter">Analyzing Architectural DNA...</h3>
+                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em] mt-2">Synchronizing with AI Engine</p>
                       </div>
                     ) : state.result ? (
                       <div className="animate-in slide-in-from-bottom-6 duration-700">
                         <AnalysisResult 
                           analysis={state.result} 
+                          onChange={(updated) => setState(s => ({ ...s, result: updated }))}
                           mainUrl={state.mainImage!} 
                           isGenerating={state.generatingImage}
                           generatedUrl={state.generatedVariantUrl}
@@ -539,20 +554,20 @@ const App: React.FC = () => {
                         />
                         <div className="sticky bottom-6 mt-8 bg-slate-900 rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl border border-slate-800 z-50">
                           <div className="text-white text-center md:text-left">
-                             <h3 className="font-black text-2xl leading-tight tracking-tight uppercase">
-                               {state.editingProductId ? `Update Product?` : `Save & Process Next?`}
+                             <h3 className="font-black text-2xl leading-tight tracking-tight">
+                               {state.editingProductId ? `Update Record?` : `Save to Vault?`}
                              </h3>
                              <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.3em] mt-1">
-                              {state.queue.length > 0 ? `${state.queue.length} items remaining in ingestion pipeline` : `Final inventory synchronization for ${activeWebsite.brand}`}
+                              {state.queue.length > 0 ? `${state.queue.length} items pending in pipeline` : `Finalize ${activeWebsite.brand} record sync`}
                              </p>
                           </div>
                           <div className="flex gap-4">
-                            <button onClick={() => setState(s => ({ ...s, result: null, mainImage: null }))} className="px-8 py-4 text-white text-[10px] font-black uppercase tracking-widest hover:text-slate-400 transition-all">Discard</button>
+                            <button onClick={() => setState(s => ({ ...s, result: null, mainImage: null, editingProductId: null, view: s.queue.length > 0 ? 'analysis' : 'inventory' }))} className="px-8 py-4 text-white text-[10px] font-black uppercase tracking-widest hover:text-slate-400">Discard</button>
                             <button 
                               onClick={handleSaveToInventory} 
                               className="bg-emerald-500 hover:bg-emerald-400 text-white px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95"
                             >
-                              {state.editingProductId ? 'Update Inventory' : (state.queue.length > 0 ? 'Save & Next' : 'Confirm & Save')}
+                              {state.editingProductId ? 'Update Record' : (state.queue.length > 0 ? 'Save & Sync Next' : 'Commit to Vault')}
                             </button>
                           </div>
                         </div>
@@ -560,9 +575,9 @@ const App: React.FC = () => {
                     ) : state.error ? (
                       <div className="bg-red-50 p-10 rounded-[3rem] border-2 border-red-100 text-center space-y-4">
                          <span className="text-5xl">⚠️</span>
-                         <h3 className="text-xl font-black text-red-900 tracking-tighter">Engine Failure</h3>
+                         <h3 className="text-xl font-black text-red-900">Engine Conflict</h3>
                          <p className="text-sm text-red-600 font-bold uppercase tracking-widest">{state.error}</p>
-                         <button onClick={() => state.mainImage && runAnalysis(state.mainImage)} className="bg-red-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest">Retry Analysis</button>
+                         <button onClick={() => state.mainImage && runAnalysis(state.mainImage)} className="bg-red-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase">Retry Sync</button>
                       </div>
                     ) : state.mainImage ? (
                        <div className="flex flex-col items-center justify-center py-40">
@@ -573,7 +588,7 @@ const App: React.FC = () => {
                            onClick={() => state.mainImage && runAnalysis(state.mainImage)}
                            className="bg-blue-600 text-white px-12 py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-2xl shadow-blue-600/20 hover:scale-105 transition-all"
                          >
-                           Trigger Ingestion
+                           Trigger Analysis
                          </button>
                        </div>
                     ) : null}
